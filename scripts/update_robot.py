@@ -31,6 +31,7 @@ import errno
 import argparse
 import os
 import sys
+import re
 
 import rospy
 
@@ -43,6 +44,7 @@ from baxter_maintenance_msgs.msg import (
     UpdateStatus,
 )
 
+from baxter_interface import settings
 
 class Updater(object):
     """
@@ -53,6 +55,8 @@ class Updater(object):
                             the current UpdateStatus message.
     """
     def __init__(self):
+        if not self._ros_srv_update_version():
+            sys.exit(1)
         self.status_changed = baxter_dataflow.Signal()
 
         self._status = UpdateStatus()
@@ -83,6 +87,51 @@ class Updater(object):
             timeout=5.0,
             timeout_msg="Failed to get list of available updates"
         )
+
+    def _ros_srv_update_version(self):
+        """
+        Verifies the version of the software is older than 1.1.0.
+        If newer, print out url to SSH update instructions
+        and return False
+        """
+        param_name = "rethink/software_version"
+        sdk_version = settings.SDK_VERSION
+        robot_version = rospy.get_param(param_name, None)
+        if not robot_version:
+            rospy.logerr("RobotUpdater: Failed to retrieve robot version "
+                          "from rosparam: %s\n"
+                          "Verify robot state and connectivity "
+                          "(i.e. ROS_MASTER_URI)", param_name)
+            return False
+        else:
+            # parse out first 3 digits of robot version tag
+            pattern = ("^([0-9]+)\.([0-9]+)\.([0-9]+)")
+            match = re.search(pattern, robot_version)
+            if not match:
+                rospy.logwarn("RobotEnable: Invalid robot version: %s",
+                              robot_version)
+                return True
+            robot_version = match.string[match.start(1):match.end(3)]
+            def detect_ssh_update_required(robot_version):
+                # Returns True if the robot's version is older
+                # than RSDK 1.1.0
+                v_list = robot_version.split('.')
+                if float(v_list[0]) < 1:
+                    return False
+                elif float(v_list[1]) < 1:
+                    return False
+                else:
+                    return True
+            if detect_ssh_update_required(robot_version):
+                errstr_version = ("RobotUpdater: Your Baxter's software "
+                "version is (%s).\nFor robots with software 1.1.0 and newer, "
+                "software updates must be run by SSH'ing into the robot.\n"
+                "Please see "
+                "http://sdk.rethinkrobotics.com/wiki/SSH_Update for a "
+                "detailed tutorial on updating your robot over SSH.") 
+                rospy.logerr(errstr_version, robot_version)
+                return False
+        return True
 
     def _on_update_sources(self, msg):
         if msg.uuid != self._avail_updates.uuid:
