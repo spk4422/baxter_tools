@@ -118,7 +118,7 @@ class Updater(object):
                 v_list = robot_version.split('.')
                 if float(v_list[0]) < 1:
                     return False
-                elif float(v_list[1]) < 1:
+                elif float(v_list[0]) == 1 and float(v_list[1]) < 1:
                     return False
                 else:
                     return True
